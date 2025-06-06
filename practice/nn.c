@@ -27,13 +27,24 @@ int main(void) {
     float eps = 1e-4;
     float rate = 1e-2;
 
-    printf("cost = %f\n", nn_cost(nn, ti, to));
+    printf("Initial Cost = %f\n", nn_cost(nn, ti, to));
     
-    for (size_t i = 0; i < 1000 * 1000; i++) {
+    #if 1
+    for (size_t iter = 0; iter < 1000 * 1000; iter++) {
+        nn_backprop(nn, &g, ti, to);
+        nn_learn(nn, g, rate);
+    }
+    #endif
+
+    #if 0
+    for (size_t i = 0; i < 100 * 1000; i++) {
         nn_finite_difference(nn, &g, eps, ti, to);
         nn_learn(nn, g, rate);
     }
+    #endif
 
+
+    printf("Final Cost = %f\n", nn_cost(nn, ti, to));
     printf("---------------------------------------\n");
 
     for (size_t i = 0; i < 2; i++) {
