@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <math.h>
+#include <stdint.h>
 // ----------------------
 
 // ----- standard macros -----
@@ -86,6 +87,7 @@ float nn_cost(NN nn, matrix ti, matrix to);
 void nn_finite_difference(NN nn, NN* g, float eps, matrix ti, matrix to);
 void nn_learn(NN nn, NN g, float rate);
 void nn_backprop(NN nn, NN* g, matrix ti, matrix to);
+void nn_render_to_png(NN nn, int width, int height, const char* filename, float cost);
 // ----------------------------------
 
 #endif // NN_HEADER
@@ -457,8 +459,151 @@ void nn_backprop(NN nn, NN* g, matrix ti, matrix to) {
 #endif // NN_IMPLEMENTATION
 
 
+#ifdef NN_RENDER_IMPLEMENTATION
 
+#define OLIVEC_IMPLEMENTATION
+#include "olive.c"
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
+static uint32_t hex24_to_argb(uint32_t hex24) {
+    uint32_t r = (hex24 >> 16) & 0xFF;
+    uint32_t g = (hex24 >> 8) & 0xFF;
+    uint32_t b = hex24 & 0xFF;
+    return (0xFF << 24) | (b << 16) | (g << 8) | (r);
+}
+
+static uint8_t lerp8(uint8_t a, uint8_t b, float t) {
+    return (uint8_t)roundf(a + (b - a) * t);
+}
+
+static uint32_t lerp_color(uint32_t c0, uint32_t c1, float t) {
+    uint8_t r0 =  c0 & 0xFF;
+    uint8_t g0 = (c0 >> 8) & 0xFF;
+    uint8_t b0 = (c0 >> 16) & 0xFF;
+    uint8_t a0 = (c0 >> 24) & 0xFF;
+    uint8_t r1 =  c1 & 0xFF;
+    uint8_t g1 = (c1 >> 8) & 0xFF;
+    uint8_t b1 = (c1 >> 16) & 0xFF;
+    uint8_t a1 = (c1 >> 24) & 0xFF;
+    uint8_t r = lerp8(r0, r1, t);
+    uint8_t g = lerp8(g0, g1, t);
+    uint8_t b = lerp8(b0, b1, t);
+    uint8_t a = lerp8(a0, a1, t);
+    return (a << 24) | (b << 16) | (g << 8) | (r);
+}
+
+void nn_render_to_png(NN nn, int width, int height, const char* filename, float cost) {
+    uint32_t *pixels = (uint32_t*)malloc(sizeof(uint32_t) * width * height);
+    Olivec_Canvas img = olivec_canvas(pixels, width, height, width);
+
+    const size_t NG = 9;
+    uint32_t neuron_grad[NG] = {
+        hex24_to_argb(0x005F73), // #005F73
+        hex24_to_argb(0x0A9396), // #0A9396
+        hex24_to_argb(0x94D2BD), // #94D2BD
+        hex24_to_argb(0xE9D8A6), // #E9D8A6
+        hex24_to_argb(0xEE9B00), // #EE9B00
+        hex24_to_argb(0xCA6702), // #CA6702
+        hex24_to_argb(0xBB3E03), // #BB3E03
+        hex24_to_argb(0xAE2012), // #AE2012
+        hex24_to_argb(0x9B2226), // #9B2226
+    };
+
+    const size_t CG = 5;
+    uint32_t conn_grad[CG] = {
+        hex24_to_argb(0xE0B1CB), // #E0B1CB
+        hex24_to_argb(0xBE95C4), // #BE95C4
+        hex24_to_argb(0x9F86C0), // #9F86C0
+        hex24_to_argb(0x5E548E), // #5E548E
+        hex24_to_argb(0x231942), // #231942
+    };
+
+    uint32_t background_color = hex24_to_argb(0xCCCCFF); // #CCCCFF 
+    uint32_t input_color = hex24_to_argb(0x7B68EE); // #7B68EE  
+    uint32_t frame_color = hex24_to_argb(0x2B4593); // #2B4593  
+    uint32_t text_color = hex24_to_argb(0x000000); // #000000
+
+    olivec_fill(img, background_color);
+
+    int neuron_radius = 25;
+    int layer_border_vpad = 50;
+    int layer_border_hpad = 50;
+    int nn_width = width - 2 * layer_border_hpad;
+    int nn_height = height - 2 * layer_border_vpad;
+    int nn_x = width / 2 - nn_width / 2;
+    int nn_y = height / 2 - nn_height / 2;
+
+    size_t arch_count = nn.count + 1;
+    int layer_hpad = nn_width / arch_count;
+
+    for (size_t l = 0; l < arch_count; l++) {
+        int neurons_in = nn.inputs[l].cols;
+        int layer_vpad = nn_height / neurons_in;
+
+        for (size_t i = 0; i < (size_t)neurons_in; i++) {
+            int cx1 = nn_x + (int)l * layer_hpad + layer_hpad / 2;
+            int cy1 = nn_y + (int)i * layer_vpad + layer_vpad / 2;
+
+            if (l + 1 < arch_count) {
+                int neurons_out = nn.inputs[l + 1].cols;
+                int next_vpad  = nn_height / neurons_out;
+
+                for (size_t j = 0; j < (size_t)neurons_out; j++) {
+                    int cx2 = nn_x + (int)(l + 1) * layer_hpad + layer_hpad / 2;
+                    int cy2 = nn_y + (int)j * next_vpad + next_vpad / 2;
+
+                    float w = MATRIX_AT(nn.weights[l], i, j);
+                    float sw = 1.f / (1.f + expf(-w));
+                    if (sw < 0.f) sw = 0.f;
+                    else if (sw > 1.f) sw = 1.f;
+
+                    float idxf = sw * (CG - 1);
+                    size_t idx0 = (size_t)floorf(idxf);
+                    size_t idx1 = (idx0 < CG - 1 ? idx0 + 1 : idx0);
+                    float frac = idxf - (float)idx0;
+
+                    uint32_t col_line = lerp_color(conn_grad[idx0], conn_grad[idx1], frac);
+                    olivec_line(img, cx1, cy1, cx2, cy2, col_line);
+                }
+            }
+
+            uint32_t neuron_color;
+            if (l == 0) {
+                neuron_color = input_color;
+            } else {
+                float raw = MATRIX_AT(nn.biases[l - 1], 0, i);
+                float s = 1.f / (1.f + expf(-raw));
+                if (s < 0.f) s = 0.f;
+                else if (s > 1.f) s = 1.f;
+
+                float idxf = s * (NG - 1);
+                size_t idx0 = (size_t)floorf(idxf);
+                size_t idx1 = (idx0 < NG - 1 ? idx0 + 1 : idx0);
+                float frac = idxf - (float)idx0;
+
+                neuron_color = lerp_color(neuron_grad[idx0], neuron_grad[idx1], frac);
+            }
+
+            olivec_circle(img, cx1, cy1, neuron_radius + 1.5, input_color);
+            olivec_circle(img, cx1, cy1, neuron_radius, neuron_color);
+        }
+    }
+
+    char buf[64];
+    snprintf(buf, sizeof(buf), "Cost: %.4f", cost);
+    // olivec_text(img, buf, 10, 10, olivec_default_font, 16, text_color);
+
+    uint32_t frame_thicc = 10;
+    olivec_frame(img, 0, 0, width - 1, height - 1, frame_thicc, frame_color);
+
+    stbi_write_png(filename, width, height, 4, img.pixels, img.stride * sizeof(uint32_t));
+
+    free(pixels);
+}
+
+#endif // NN_RENDER_IMPLEMENTATION
 
 
 /*

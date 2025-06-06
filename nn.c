@@ -1,89 +1,74 @@
 #include <time.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #define NN_IMPLEMENTATION
+#define NN_RENDER_IMPLEMENTATION
 #include "nn.h"
 
 #define BITS 4
+#define IMG_WIDTH 800
+#define IMG_HEIGHT 600
 
 int main(void) {
-    srand(time(0));
+    srand((unsigned)time(NULL));
 
     size_t n = (1 << BITS);
     size_t rows = n * n;
     matrix ti = matrix_alloc(rows, 2 * BITS, 2 * BITS);
     matrix to = matrix_alloc(rows, BITS + 1, BITS + 1);
 
-    for (size_t i = 0; i < ti.rows; i++) {
+    for (size_t i = 0; i < rows; i++) {
         size_t x = i / n;
         size_t y = i % n;
         size_t z = x + y;
         for (size_t j = 0; j < BITS; j++) {
-            MATRIX_AT(ti, i, j) = (x >> j) & 1;
-            MATRIX_AT(ti, i, j + BITS) = (y >> j) & 1;
-            MATRIX_AT(to, i, j) = (z >> j) & 1;
+            MATRIX_AT(ti, i, j) = (float)((x >> j) & 1);
+            MATRIX_AT(ti, i, j + BITS) = (float)((y >> j) & 1);
         }
-        MATRIX_AT(to, i, BITS) = z >= n;
+        for (size_t j = 0; j < BITS; j++) {
+            MATRIX_AT(to, i, j) = (float)((z >> j) & 1);
+        }
+        MATRIX_AT(to, i, BITS) = (float)(z >= n);
     }
 
-    size_t architecture[] = {2 * BITS, 4 * BITS, BITS + 1};
-
+    size_t architecture[] = { 2 * BITS, 4 * BITS, BITS + 1 };
     NN nn = nn_alloc(architecture, ARRAY_SIZE(architecture));
     NN g = nn_alloc(architecture, ARRAY_SIZE(architecture));
+    nn_randomise(nn, -1, 1);
 
-    nn_randomise(nn, 0, 1);
-
-    float rate = 1;
-
+    float rate = 1.0f;
     printf("Initial Cost = %f\n", nn_cost(nn, ti, to));
-    
-    for (size_t iter = 0; iter < 10 * 1000; iter++) {
-        #if 1
-            nn_backprop(nn, &g, ti, to);
-        #else
-            nn_finite_difference(nn, &g, 1e-1, ti, to);
-        #endif
+
+    struct stat st = {0};
+    if (stat("frames", &st) == -1) {
+        mkdir("frames", 0755);
+    }
+
+    const size_t total_iters = 10 * 1000;
+    const size_t frame_interval = 100;
+    size_t frame_count = 0;
+
+    for (size_t iter = 0; iter < total_iters; iter++) {
+        nn_backprop(nn, &g, ti, to);
         nn_learn(nn, g, rate);
-        // if (iter % 10000 == 0) {
-            printf("%zu: Cost = %f\n", iter, nn_cost(nn, ti, to));
-        // }
+
+        if ((iter % frame_interval) == 0) {
+            float c = nn_cost(nn, ti, to);
+
+            char fname[64];
+            snprintf(fname, sizeof(fname), "frames/frame_%05zu.png", frame_count++);
+
+            nn_render_to_png(nn, IMG_WIDTH, IMG_HEIGHT, fname, c);
+
+            printf("Wrote %s (iter=%zu, cost=%f)\n", fname, iter, nn_cost(nn, ti, to));
+        }
     }
 
     printf("Final Cost = %f\n", nn_cost(nn, ti, to));
-    printf("---------------------------------------\n");
-
-    size_t fails = 0;
-    for (size_t x = 0; x < n; x++) {
-        for (size_t y = 0; y < n; y++) {
-            size_t z = x + y;
-            for (size_t j = 0; j < BITS; j++) {
-                MATRIX_AT(NN_INPUT(nn), 0, j) = (x>>j)&1;
-                MATRIX_AT(NN_INPUT(nn), 0, j + BITS) = (y>>j)&1;
-            }
-            nn_forward(nn);
-            if (MATRIX_AT(NN_OUTPUT(nn), 0, BITS) > 0.5f) {
-                if (z < n) {
-                    printf("%zu + %zu = (OVERFLOW<>%zu)\n", x, y, z);
-                    fails += 1;
-                }
-            } 
-            else {
-                size_t a = 0;
-                for (size_t j = 0; j < BITS; j++) {
-                    size_t bit = MATRIX_AT(NN_OUTPUT(nn), 0, j) > 0.5f;
-                    a |= bit<<j;
-                }
-                if (z != a) {
-                    printf("%zu + %zu = (%zu<>%zu)\n", x, y, z, a);
-                    fails ++;
-                }
-            }
-        }
-    }
-
-    if (fails == 0) printf("OK\n");
+    printf("Generated %zu frames.\n", frame_count);
 
     nn_free(&nn);
     nn_free(&g);
-
     return 0;
 }
