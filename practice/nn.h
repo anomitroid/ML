@@ -307,7 +307,7 @@ float nn_cost(NN nn, matrix ti, matrix to) {
             result += d * d;
         }
     }
-    return result;
+    return result / n;
 }
 
 void nn_finite_difference(NN nn, NN* g, float eps, matrix ti, matrix to) {
