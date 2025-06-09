@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <stdint.h>
+#include <string.h>
 // ----------------------
 
 // ----- standard macros -----
@@ -64,6 +65,8 @@ matrix matrix_row(matrix m, size_t i);
 void matrix_copy(matrix destination, matrix source);
 matrix matrix_data_alloc(float* data, size_t rows, size_t cols, size_t stride);
 void matrix_free(matrix* m);
+void matrix_save(FILE* out, matrix m);
+matrix matrix_load(FILE* in);
 // -------------------------------------
 
 
@@ -111,7 +114,7 @@ void matrix_display(matrix m, const char* name, size_t padding) {
     NN_ASSERT(m.rows > 0 && m.cols > 0 && m.stride > 0);
     printf("%*s%s = [\n", (int) padding, "", name);
     for (size_t i = 0; i < m.rows; i++) {
-        printf("%*s", 2 * (int) padding, "");
+        printf("    %*s", (int) padding, "");
         for (size_t j = 0; j < m.cols; j++) {
             printf("%f  ", MATRIX_AT(m, i, j));
         }
@@ -222,6 +225,39 @@ void matrix_free(matrix* m) {
     NN_ASSERT(m->elements != NULL);
     free(m -> elements);
     m -> elements = NULL;
+}
+
+void matrix_save(FILE* out, matrix m) {
+    const char* mm = "nn.h.mat";
+    fwrite(mm, strlen(mm), 1, out);
+    fwrite(&m.rows, sizeof(m.rows), 1, out);
+    fwrite(&m.cols, sizeof(m.cols), 1, out);
+    size_t n = fwrite(m.elements, sizeof(*m.elements), m.rows * m.cols, out);
+    for (size_t i = 0; i < m.rows; i++) {
+        size_t n = fwrite(&MATRIX_AT(m, i, 0), sizeof(*m.elements), m.cols, out);
+        while (n < m.rows * m.cols && !ferror(out)) {
+            size_t k = fwrite(m.elements + n, sizeof(*m.elements), m.rows * m.cols - n, out);
+            n += k;
+        }
+    }
+}
+
+matrix matrix_load(FILE* in) {
+    uint64_t mm;
+    fread(&mm, sizeof(mm), 1, in);
+    NN_ASSERT(mm == 0x74616d2e682e6e6e);
+    size_t rows, cols;
+    fread(&rows, sizeof(rows), 1, in);
+    fread(&cols, sizeof(cols), 1, in);
+    matrix m = matrix_alloc(rows, cols, cols);
+
+    size_t n = fread(m.elements, sizeof(*m.elements), rows * cols, in);
+    while (n < rows * cols && !ferror(in)) {
+        size_t k = fread(m.elements, sizeof(*m.elements) + n, rows * cols - n, in);
+        n += k;
+    }
+
+    return m;
 }
 // -------------------------------------
 
@@ -592,8 +628,8 @@ void nn_render_to_png(NN nn, int width, int height, const char* filename, float 
     }
 
     char buf[64];
-    snprintf(buf, sizeof(buf), "Cost: %.4f", cost);
-    // olivec_text(img, buf, 10, 10, olivec_default_font, 16, text_color);
+    snprintf(buf, sizeof(buf), "cost: %.4f", cost);
+    olivec_text(img, buf, 10, 10, olivec_default_font, 5, text_color);
 
     uint32_t frame_thicc = 10;
     olivec_frame(img, 0, 0, width - 1, height - 1, frame_thicc, frame_color);

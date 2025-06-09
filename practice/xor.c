@@ -50,7 +50,7 @@ int main(void) {
     printf("Final Cost = %f\n", nn_cost(nn, ti, to));
     printf("---------------------------------------\n");
 
-     for (size_t i = 0; i < 2; i++) {
+    for (size_t i = 0; i < 2; i++) {
         for (size_t j = 0; j < 2; j++) {
             MATRIX_AT(NN_INPUT(nn), 0, 0) = i;
             MATRIX_AT(NN_INPUT(nn), 0, 1) = j;
