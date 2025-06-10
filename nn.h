@@ -89,6 +89,7 @@ void nn_forward(NN nn);
 float nn_cost(NN nn, matrix ti, matrix to);
 void nn_finite_difference(NN nn, NN* g, float eps, matrix ti, matrix to);
 void nn_learn(NN nn, NN g, float rate);
+void nn_zero(NN* nn);
 void nn_backprop(NN nn, NN* g, matrix ti, matrix to);
 void nn_render_to_png(NN nn, int width, int height, const char* filename, float cost);
 // ----------------------------------
@@ -245,7 +246,7 @@ void matrix_save(FILE* out, matrix m) {
 matrix matrix_load(FILE* in) {
     uint64_t mm;
     fread(&mm, sizeof(mm), 1, in);
-    NN_ASSERT(mm == 0x74616d2e682e6e6e);
+    NN_ASSERT(mm == 0x74616d2e682e6e);
     size_t rows, cols;
     fread(&rows, sizeof(rows), 1, in);
     fread(&cols, sizeof(cols), 1, in);
@@ -287,7 +288,7 @@ void nn_display(NN nn, const char* name) {
     printf("%s = [\n", name);
     char wname[32], bname[32];
     for (size_t i = 0; i < nn.count; i++) {
-        snprintf(wname, sizeof(wname), "ws%zu", i);
+        snprintf(wname, sizeof(wname), "wei->weights%zu", i);
         snprintf(bname, sizeof(bname), "bs%zu", i);
         matrix_display(nn.weights[i], wname, 4);
         matrix_display(nn.biases[i], bname, 4);
@@ -389,105 +390,71 @@ void nn_learn(NN nn, NN g, float rate) {
     }
 }
 
+void nn_zero(NN* nn) {
+    for (size_t i = 0; i < nn -> count; ++i) {
+        matrix_fill(nn -> weights[i], 0);
+        matrix_fill(nn -> biases[i], 0);
+        matrix_fill(nn -> inputs[i], 0);
+    }
+    matrix_fill(nn -> inputs[nn -> count], 0);
+}
+
 void nn_backprop(NN nn, NN* g, matrix ti, matrix to) {
-    NN_ASSERT(g -> weights != NULL && g -> biases != NULL);
-    NN_ASSERT(nn.weights != NULL && nn.biases != NULL);
-    NN_ASSERT(ti.elements != NULL && to.elements != NULL);
     NN_ASSERT(ti.rows == to.rows);
-
-    size_t N = ti.rows;  
-    size_t L = nn.count;  
-
-    for (size_t l = 0; l < L; l++) {
-        matrix_fill(g -> weights[l], 0.0f);
-        matrix_fill(g -> biases [l], 0.0f);
-    }
-
-    matrix* deltas = NN_MALLOC((L + 1) * sizeof(matrix));
-    NN_ASSERT(deltas != NULL);
-    for (size_t l = 1; l <= L; l++) {
-        size_t m_l = nn.inputs[l].cols;  
-        deltas[l] = matrix_alloc(1, m_l, m_l);
-    }
-
-    for (size_t ex = 0; ex < N; ex++) {
-        matrix xrow = matrix_row(ti, ex);  
-        matrix_copy(nn.inputs[0], xrow);
+    size_t n = ti.rows;
+    NN_ASSERT(NN_OUTPUT(nn).cols == to.cols);
+    NN_ASSERT(g != NULL);
+    NN_ASSERT(g->inputs != NULL && g->weights != NULL && g->biases != NULL);
+    NN_ASSERT(nn.inputs != NULL && nn.weights != NULL && nn.biases != NULL);
+    NN_ASSERT(n > 0);
+    nn_zero(g);
+    for (size_t i = 0; i < n; ++i) {
+        matrix x = matrix_row(ti, i);
+        matrix y = matrix_row(to, i);
+        matrix_copy(NN_INPUT(nn), x);
         nn_forward(nn);
 
-        matrix a_L = nn.inputs[L];
-        matrix yrow = matrix_row(to, ex);
-        matrix delta_L = deltas[L];
-
-        size_t m_L = a_L.cols;
-        for (size_t k = 0; k < m_L; k++) {
-            float a_val = MATRIX_AT(a_L, 0, k);
-            float y_val = MATRIX_AT(yrow, 0, k);
-            float dL_da  = 2.0f * (a_val - y_val);
-            float da_dz  = a_val * (1.0f - a_val);
-            MATRIX_AT(delta_L, 0, k) = dL_da * da_dz;
+        for (size_t j = 0; j <= nn.count; j++) {
+            NN_ASSERT(g->inputs[j].elements != NULL);
+            matrix_fill(g->inputs[j], 0);
         }
 
-        for (size_t layer = L; layer > 1; layer--) {
-            size_t m_prev = nn.inputs[layer - 1].cols;
-            size_t m_cur = nn.inputs[layer].cols;
-
-            matrix W_next = nn.weights[layer - 1];
-            matrix delta_next = deltas[layer];
-            matrix a_prev = nn.inputs[layer - 1];
-            matrix delta_cur = deltas[layer - 1];
-
-            for (size_t j = 0; j < m_prev; j++) {
-                float a_val = MATRIX_AT(a_prev, 0, j);
-                float da_dz = a_val * (1.0f - a_val);
-                float sum = 0.0f;
-                for (size_t k = 0; k < m_cur; k++) {
-                    float dnext_val = MATRIX_AT(delta_next, 0, k);
-                    float w_val = MATRIX_AT(W_next, j, k);
-                    sum += dnext_val * w_val;
-                }
-                MATRIX_AT(delta_cur, 0, j) = sum * da_dz;
-            }
+        for (size_t j = 0; j < to.cols; ++j) {
+            NN_ASSERT(j < NN_OUTPUT(*g).cols && j < NN_OUTPUT(nn).cols && j < y.cols);
+            MATRIX_AT(NN_OUTPUT(*g), 0, j) = MATRIX_AT(NN_OUTPUT(nn), 0, j) - MATRIX_AT(y, 0, j);
         }
 
-        for (size_t layer = 1; layer <= L; layer++) {
-            matrix delta_l = deltas[layer];
-            matrix a_prev  = nn.inputs[layer - 1];
-
-            size_t m_prev = a_prev.cols;
-            size_t m_cur  = delta_l.cols;
-
-            for (size_t j = 0; j < m_prev; j++) {
-                float a_val = MATRIX_AT(a_prev, 0, j);
-                for (size_t k = 0; k < m_cur; k++) {
-                    float d_val = MATRIX_AT(delta_l, 0, k);
-                    MATRIX_AT(g -> weights[layer - 1], j, k) += a_val * d_val;
+        for (size_t l = nn.count; l > 0; --l) {
+            NN_ASSERT(l < nn.count + 1);
+            for (size_t j = 0; j < nn.inputs[l].cols; j++) {
+                float a = MATRIX_AT(nn.inputs[l], 0, j);
+                float da = MATRIX_AT(g->inputs[l], 0, j);
+                NN_ASSERT(j < g->biases[l - 1].cols);
+                MATRIX_AT(g->biases[l - 1], 0, j) += 2 * da * a * (1 - a);
+                for (size_t k = 0; k < nn.inputs[l - 1].cols; k++) {
+                    float pa = MATRIX_AT(nn.inputs[l - 1], 0, k);
+                    float w = MATRIX_AT(nn.weights[l - 1], k, j);
+                    NN_ASSERT(k < g->weights[l - 1].rows && j < g->weights[l - 1].cols);
+                    MATRIX_AT(g->weights[l - 1], k, j) += 2 * da * a * (1 - a) * pa;
+                    NN_ASSERT(k < g->inputs[l - 1].cols);
+                    MATRIX_AT(g->inputs[l - 1], 0, k) += 2 * da * a * (1 - a) * w;
                 }
             }
-            for (size_t k = 0; k < m_cur; k++) {
-                float d_val = MATRIX_AT(delta_l, 0, k);
-                MATRIX_AT(g -> biases[layer - 1], 0, k) += d_val;
-            }
         }
     }
 
-    for (size_t layer = 0; layer < L; layer++) {
-        matrix Gw = g -> weights[layer];
-        for (size_t i = 0; i < Gw.rows; i++) {
-            for (size_t j = 0; j < Gw.cols; j++) {
-                MATRIX_AT(Gw, i, j) /= (float)N;
+    for (size_t i = 0; i < g->count; i++) {
+        for (size_t j = 0; j < g->weights[i].rows; j++) {
+            for (size_t k = 0; k < g->weights[i].cols; k++) {
+                MATRIX_AT(g->weights[i], j, k) /= n;
             }
         }
-        matrix Gb = g -> biases[layer];
-        for (size_t j = 0; j < Gb.cols; j++) {
-            MATRIX_AT(Gb, 0, j) /= (float)N;
+        for (size_t j = 0; j < g->biases[i].rows; j++) {
+            for (size_t k = 0; k < g->biases[i].cols; k++) {
+                MATRIX_AT(g->biases[i], j, k) /= n;
+            }
         }
     }
-
-    for (size_t l = 1; l <= L; l++) {
-        matrix_free(&deltas[l]);
-    }
-    free(deltas);
 }
 
 // -------------------------------------

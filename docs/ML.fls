@@ -1,9 +1,9 @@
-PWD /home/anomitroid/ML
+PWD /home/anomitroid/ML/docs
 INPUT /etc/texmf/web2c/texmf.cnf
 INPUT /usr/share/texmf/web2c/texmf.cnf
 INPUT /usr/share/texlive/texmf-dist/web2c/texmf.cnf
 INPUT /var/lib/texmf/web2c/pdftex/pdflatex.fmt
-INPUT /home/anomitroid/ML/ML.tex
+INPUT /home/anomitroid/ML/docs/ML.tex
 OUTPUT ML.log
 INPUT /usr/share/texlive/texmf-dist/tex/latex/base/article.cls
 INPUT /usr/share/texlive/texmf-dist/tex/latex/base/article.cls

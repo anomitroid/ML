@@ -1751,6 +1751,8 @@ Finally,
     = \frac{1}{N}\sum_{i=1}^{N} \frac{\partial L_{i}}{\partial \mathbf{b}^{(\ell)}}.
 \]
 
+
+
 \vspace{1em}
 \noindent With these detailed, vectorized expressions, the network can be implemented in a highly scalable way for arbitrary \(n\)-dimensional inputs and \(L\) layers of arbitrary widths \(m_{1},m_{2},\dots,m_{L}\).  Each forward pass requires \(O\bigl(\sum_{\ell=1}^{L} m_{\ell} \,m_{\ell-1}\bigr)\) operations, and each backward pass (to compute all \(\delta_{i}^{(\ell)}\)) also requires \(O\bigl(\sum_{\ell=1}^{L} m_{\ell} \,m_{\ell-1}\bigr)\).  Thus training scales linearly in the total number of parameters, making this derivation suitable for deep, wide networks with high-dimensional inputs.
 

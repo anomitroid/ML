@@ -2,11 +2,10 @@
 
 set -xe
 
-CFLAGS="-O3 -Wall -Wextra `pkg-config --cflags raylib`"
-LIBS="`pkg-config --libs raylib` -lm -lglfw -ldl -lpthread"
+CFLAGS="-O3 -Wall -Wextra"
+LIBS="-lm"
 
-# clang -Wall -Wextra -o nn nn.c -lm
-# clang $CFLAGS -o nn1 nn1.c $LIBS
-clang $CFLAGS -o gui gui.c $LIBS
 # clang $CFLAGS -o adder_gen adder_gen.c $LIBS
 # clang $CFLAGS -o xor_gen xor_gen.c $LIBS
+clang $CFLAGS `pkg-config --cflags raylib` -o gui gui.c `pkg-config --libs raylib` $LIBS -lglfw -ldl -lpthread
+clang $CFLAGS `pkg-config --cflags raylib` -o img2mat img2mat.c `pkg-config --libs raylib` $LIBS -lglfw -ldl -lpthread

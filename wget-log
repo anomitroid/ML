@@ -1,0 +1,6 @@
+--2025-06-09 15:02:38--  https://storage.googleapis.com/kagglesdsdata/datasets/27469/35012/mnist_png/training/8/10057.png?X-Goog-Algorithm=GOOG4-RSA-SHA256
+Resolving storage.googleapis.com (storage.googleapis.com)... 142.250.207.219, 142.250.194.91, 142.250.194.219, ...
+Connecting to storage.googleapis.com (storage.googleapis.com)|142.250.207.219|:443... connected.
+HTTP request sent, awaiting response... 400 Bad Request
+2025-06-09 15:02:40 ERROR 400: Bad Request.
+
