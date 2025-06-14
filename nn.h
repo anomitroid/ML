@@ -94,6 +94,30 @@ void nn_backprop(NN nn, NN* g, matrix ti, matrix to);
 void nn_render_to_png(NN nn, int width, int height, const char* filename, float cost);
 // ----------------------------------
 
+#ifdef NN_ENABLE_GUI
+#include <float.h>
+#include "raylib.h"
+
+typedef struct {
+    float *items;
+    size_t count;
+    size_t capacity;
+} Plot;
+
+#define DA_INIT_CAP 256
+#define da_append(da, item)                                                                     \
+    do {                                                                                        \
+        if ((da) -> count >= (da) -> capacity) {                                                \
+            (da) -> capacity = (da) -> capacity == 0 ? DA_INIT_CAP : (da) -> capacity * 2;      \
+            (da) -> items = realloc((da) -> items, (da) -> capacity*sizeof(*(da) -> items));    \
+            assert((da) -> items != NULL);                                                      \
+        }                                                                                       \
+                                                                                                \
+        (da) -> items[(da) -> count++] = (item);                                                \
+    } while (0)
+
+#endif // NN_ENABLE_GUI
+
 #endif // NN_HEADER
 
 #ifdef NN_IMPLEMENTATION
@@ -223,7 +247,7 @@ matrix matrix_data_alloc(float* data, size_t rows, size_t cols, size_t stride) {
 
 void matrix_free(matrix* m) {
     NN_ASSERT(m != NULL);
-    NN_ASSERT(m->elements != NULL);
+    NN_ASSERT(m -> elements != NULL);
     free(m -> elements);
     m -> elements = NULL;
 }
@@ -233,7 +257,6 @@ void matrix_save(FILE* out, matrix m) {
     fwrite(mm, strlen(mm), 1, out);
     fwrite(&m.rows, sizeof(m.rows), 1, out);
     fwrite(&m.cols, sizeof(m.cols), 1, out);
-    size_t n = fwrite(m.elements, sizeof(*m.elements), m.rows * m.cols, out);
     for (size_t i = 0; i < m.rows; i++) {
         size_t n = fwrite(&MATRIX_AT(m, i, 0), sizeof(*m.elements), m.cols, out);
         while (n < m.rows * m.cols && !ferror(out)) {
@@ -459,7 +482,78 @@ void nn_backprop(NN nn, NN* g, matrix ti, matrix to) {
 
 // -------------------------------------
 
+
+#ifdef NN_ENABLE_GUI
+
+void gui_render_nn(NN nn, float rx, float ry, float rw, float rh) {
+    Color low_color = {0xFF, 0x00, 0xFF, 0xFF};
+    Color high_color = {0x00, 0xFF, 0x00, 0xFF};
+
+    float neuron_radius = rh * 0.03;
+    float layer_border_vpad = rh * 0.08;
+    float layer_border_hpad = rw * 0.06;
+    float nn_width = rw - 2 * layer_border_hpad;
+    float nn_height = rh - 2 * layer_border_vpad;
+    float nn_x = rx + rw / 2 - nn_width / 2;
+    float nn_y = ry + rh / 2 - nn_height / 2;
+    size_t arch_count = nn.count + 1;
+    float layer_hpad = nn_width / arch_count;
+    for (size_t l = 0; l < arch_count; l++) {
+        float layer_vpad1 = nn_height / nn.inputs[l].cols;
+        for (size_t i = 0; i < nn.inputs[l].cols; ++i) {
+            float cx1 = nn_x + l * layer_hpad + layer_hpad / 2;
+            float cy1 = nn_y + i * layer_vpad1 + layer_vpad1 / 2;
+            if (l + 1 < arch_count) {
+                float layer_vpad2 = nn_height / nn.inputs[l + 1].cols;
+                for (size_t j = 0; j < nn.inputs[l + 1].cols; j++) {
+                    float cx2 = nn_x + (l + 1) * layer_hpad + layer_hpad / 2;
+                    float cy2 = nn_y + j * layer_vpad2 + layer_vpad2 / 2;
+                    float value = sigmoidf(MATRIX_AT(nn.weights[l], i, j));
+                    high_color.a = floorf(255.f * value);
+                    float thick = rh * 0.004f;
+                    Vector2 start = {cx1, cy1};
+                    Vector2 end = {cx2, cy2};
+                    DrawLineEx(start, end, thick, ColorAlphaBlend(low_color, high_color, WHITE));
+                }
+            }
+            if (l > 0) {
+                high_color.a = floorf(255.f * sigmoidf(MATRIX_AT(nn.biases[l - 1], 0, i)));
+                DrawCircle(cx1, cy1, neuron_radius, ColorAlphaBlend(low_color, high_color, WHITE));
+            } else {
+                DrawCircle(cx1, cy1, neuron_radius, GRAY);
+            }
+        }
+    }
+}
+
+void gui_plot(Plot plot, int rx, int ry, int rw, int rh) {
+    float min = FLT_MAX, max = FLT_MIN;
+    for (size_t i = 0; i < plot.count; i++) {
+        if (max < plot.items[i]) max = plot.items[i];
+        if (min > plot.items[i]) min = plot.items[i];
+    }
+
+    if (min > 0) min = 0;
+    size_t n = plot.count;
+    if (n < 1000) n = 1000;
+    for (size_t i = 0; i + 1 < plot.count; i++) {
+        float x1 = rx + (float) rw / n * i;
+        float y1 = ry + (1 - (plot.items[i] - min) / (max - min)) * rh;
+        float x2 = rx + (float) rw / n * (i + 1);
+        float y2 = ry + (1 - (plot.items[i + 1] - min) / (max - min)) * rh;
+        DrawLineEx((Vector2) {x1, y1}, (Vector2) {x2, y2}, rh * 0.005, RED);
+    }
+
+    float y0 = ry + (1 - (0 - min) / (max - min)) * rh;
+    DrawLineEx((Vector2) {rx + 0, y0}, (Vector2) {rx + rw - 1, y0}, rh * 0.005, WHITE);
+    DrawText("0", rx + 0, y0 - rh * 0.04, rh * 0.04, WHITE);
+}
+#endif // NN_ENABLE_GUI
+// ----------------------------------
+
 #endif // NN_IMPLEMENTATION
+// -------------------------------------------------------------------------
+
 
 
 #ifdef NN_RENDER_IMPLEMENTATION
@@ -607,109 +701,3 @@ void nn_render_to_png(NN nn, int width, int height, const char* filename, float 
 }
 
 #endif // NN_RENDER_IMPLEMENTATION
-
-
-/*
-Neural Network
-
-            w11                    w31
-    x1  ●─────────────●  h1  ●─────────────●  y
-        │\           /│ +b1  │            /│ +b3
-        │ \         / │      │           / │
-        │  \  w12  /  │      │   w32    /  │
-        │   \     /   │      │         /   │
-        │    \   /    │      │        /    │
-        │     \ /     │      │       /     │
-        │      ×      │      │      /      │
-        │     / \     │      │     /       │
-        │    /   \    │      │    /        │
-        │   /     \   │      │   /         │
-        │  /  w21  \  │      │  /          │
-        │ /         \ │      │ /           │
-        │/           \│ +b2  │/            │
-    x2  ●─────────────●  h2  ●─────────────●
-                w22
-
-
-x1, x2 are the input neurons. (1st layer)
-h1, h2 are the hidden layer. (2nd layer)
-y is the output neuron. (3rd layer)
-
-how are we going to get the values of h1 and h2?
-
-we know, 
-    h1 = sig (x1 * w11 + x2 * w21 + b1)
-    h2 = sig (x2 * w22 + x1 * w12 + b2)
-
-similarly, in case of finding y
-    y = sig (h1 * w31 + h2 * w32 + b3)
-
-
-when we look closely, it is clear that the expressions of the form 
-    a1 * w1 + a2 * w2 
-look really similar to the results of dot products
-i.e. matrix mulriplications
-
-so, we try to model the values of h1, h2, and all subsequent neurons as dot products
-and for that, we need to represent the weights as matrices
-
-so, basically, for each layer, we have
-    1. input matrix
-    2. weights matrix
-    3. bias matrix
-all we have to do is to find the dimensions of these matrices
-
-for layer 1-2
-    input is 2 elements (x1, x2)
-    output is also 2 elements (h1, h2)
-    4 weights are involved (w11, w12, w21, w22)
-    biases are 2 (b1, b2)
-
-    so, if input matrix is of dimension 1 * 2
-        i.e. [ x1   x1 ]
-        if the weights matrix is of dimension 2 * 2
-        i.e. [ w11  w12 ]
-             [ w21  w22 ]
-        then, output will be of dimension 1 * 2
-        i.e. [ h1   h2 ]
-        then, we can add bias matrix to this
-        so, bias will be of dimension 1 * 2
-        i.e. [ b1   b2 ]
-        after addind them, we apply sigmoid on each element of the output matrix
-
-    Let's try this out and see if the results match
-
-    [ x1    x2 ] * [ w11  w12 ] + [ b1  b2 ]
-                   [ w21  w22 ]
-
-    = [ x1 * w11 + x2 * w21     x1 * w12 + x2 * w22 ] + [ b1    b2 ]
-    = [ x1 * w11 + w2 * w21 + b1    x1 * w12 + x2 * w22 + b2 ]
-    then, sigmoid on each element of this matrix
-    = [ sig(x1 * w11 + w2 * w21 + b1)    sig(x1 * w12 + x2 * w22 + b2) ]
-
-    as we can see, the [0, 0] element is h1
-                       [0, 1] element is h2
-
-    let us try doing the same for layers 2-3
-
-    now, input = [ h1   h2 ]
-         weights = [ w31 ]
-                   [ w32 ]
-         output = [ y ]
-         bias = [ b3 ]
-
-    we do
-        input * weights + bias
-        
-        = [ h1 * w31 + h2 * w32 ] + [ b3 ]
-        = [ h1 * w31 + h2 * w32 + b3 ]
-
-    then signoid of the element
-        = [ sig(h1 * w31 + h2 * w32 + b3) ]
-
-thus, we have generalised on the 'forward' formula i.e. the transition between 2 layers
-
-next layer = sigmoid(inputs * weights + biases)
-
-
-*/

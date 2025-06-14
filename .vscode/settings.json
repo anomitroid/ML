@@ -6,6 +6,7 @@
         "stb_image_write.h": "c",
         "stdint.h": "c",
         "assert.h": "c",
-        "stb_image.h": "c"
+        "stb_image.h": "c",
+        "stdbool.h": "c"
     }
 }
